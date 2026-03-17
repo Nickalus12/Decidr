@@ -117,12 +117,14 @@ private val consultingPaint = android.graphics.Paint().apply {
 // ── Screen States ────────────────────────────────────────────────────────────
 
 private enum class BallState {
-    IDLE,
-    WAITING_FOR_VOICE,
-    QUESTION_RECEIVED,
-    REVEALING,
-    ANSWER_VISIBLE
+    IDLE,              // Waiting for tap
+    LISTENING,         // Mic active, capturing voice (auto-advances after 3s)
+    THINKING,          // Generating answer with dramatic reveal
+    ANSWER_VISIBLE     // Showing the answer
 }
+
+// Aliases for backward compat with existing drawing code
+private val BallState.isWaitingForVoice get() = this == BallState.LISTENING
 
 // ── Main Composable ──────────────────────────────────────────────────────────
 
@@ -224,137 +226,64 @@ fun MagicBallScreen(
         }
     }
 
-    // When spokenQuestion changes to non-null, show question briefly
-    LaunchedEffect(spokenQuestion) {
-        if (spokenQuestion != null && (ballState == BallState.WAITING_FOR_VOICE || ballState == BallState.QUESTION_RECEIVED)) {
-            ballState = BallState.QUESTION_RECEIVED
-            displayedQuestion = spokenQuestion
-            particleFrozen = false
+    // ══════════════════════════════════════════════════════════════════════
+    // SIMPLIFIED FLOW: Tap → Listen 3s → Auto-generate → Show answer
+    // Also supports: Shake at any time → instant answer (no voice needed)
+    // ══════════════════════════════════════════════════════════════════════
 
-            // Fade in question text
-            questionAlpha.snapTo(0f)
-            questionAlpha.animateTo(1f, tween(300))
-
-            // Hold for 2 seconds then fade out
-            delay(2000)
-            questionAlpha.animateTo(0f, tween(500))
-            displayedQuestion = null
-        }
-    }
-
-    // Auto-timeout: if stuck in WAITING_FOR_VOICE for 5 seconds, auto-advance
+    // When we enter LISTENING state, auto-advance after 3 seconds
     LaunchedEffect(ballState) {
-        if (ballState == BallState.WAITING_FOR_VOICE) {
-            delay(5000)
-            // If still waiting after 5 sec, move on — voice didn't work
-            if (ballState == BallState.WAITING_FOR_VOICE) {
-                ballState = BallState.QUESTION_RECEIVED
-                particleFrozen = false
+        if (ballState == BallState.LISTENING) {
+            // Wait for voice input (3 seconds max)
+            delay(3000)
+            // Auto-advance to THINKING if still listening
+            if (ballState == BallState.LISTENING) {
+                // Capture whatever question we got (may be null)
+                displayedQuestion = spokenQuestion
+                startRevealSequence(
+                    scope, hapticEngine, neuralResponse, sensorHub,
+                    displayedQuestion, voiceProfile, shakeProfile,
+                    { ans -> answerText = ans },
+                    { q, r -> onResponseGenerated(q, r) },
+                    { s -> ballState = s },
+                    darkenOverlay, consultingAlpha, particleScatter, particleSettle,
+                    textScale, textAlpha, textDepth,
+                    { v -> particleChaos = v },
+                    { v -> particleSpeedMultiplier = v },
+                    { v -> particleFrozen = v }
+                )
             }
         }
     }
 
-    // Listen for shake via SensorHub — works in ANY active state
+    // When spokenQuestion arrives during LISTENING, show it briefly
+    LaunchedEffect(spokenQuestion) {
+        if (spokenQuestion != null && ballState == BallState.LISTENING) {
+            displayedQuestion = spokenQuestion
+            questionAlpha.snapTo(0f)
+            questionAlpha.animateTo(1f, tween(300))
+        }
+    }
+
+    // Listen for shake — works in ANY state as instant trigger
     LaunchedEffect(Unit) {
         var lastShakeState = false
         sensorHub.shakeDetected.collect { shaking ->
             if (shaking && !lastShakeState) {
-                // Accept shake in IDLE, WAITING_FOR_VOICE, or QUESTION_RECEIVED
-                if (ballState == BallState.IDLE || ballState == BallState.WAITING_FOR_VOICE || ballState == BallState.QUESTION_RECEIVED) {
-                    if (ballState != BallState.REVEALING && ballState != BallState.ANSWER_VISIBLE) {
-                        val intensity = sensorHub.shakeIntensity.value
-
-                        scope.launch {
-                            ballState = BallState.REVEALING
-                            particleFrozen = false
-
-                            // Phase 1: Particles go chaotic (500ms)
-                            particleChaos = (intensity / 20f).coerceIn(0.5f, 1f)
-                            particleSpeedMultiplier = 2f + intensity / 10f
-                            launch { darkenOverlay.animateTo(0.35f, tween(400)) }
-                            launch { consultingAlpha.animateTo(1f, tween(500)) }
-
-                            // Rapid light ticks during shake
-                            hapticEngine.lightTap()
-                            delay(150)
-                            hapticEngine.lightTap()
-
-                            // Phase 2: 3 progressively stronger ticks (light -> medium -> heavy)
-                            delay(300)
-                            hapticEngine.lightTap()   // light
-                            delay(300)
-                            hapticEngine.tickTick()    // medium
-                            delay(300)
-                            hapticEngine.heavyThud()   // heavy
-
-                            // Generate response with voice and shake intelligence
-                            answerText = neuralResponse.respond(
-                                question = displayedQuestion,
-                                shakeIntensity = intensity,
-                                voiceProfile = voiceProfile,
-                                shakeProfile = shakeProfile
-                            )
-
-                            // Notify caller for profile updates
-                            onResponseGenerated(displayedQuestion, answerText)
-
-                            // Fade out consulting text
-                            launch { consultingAlpha.animateTo(0f, tween(300)) }
-
-                            // Phase 3: Particles scatter outward to edges, clearing center
-                            particleChaos = 0f
-                            particleSpeedMultiplier = 0.5f
-                            launch { particleScatter.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
-                            delay(400)
-
-                            // Phase 4: Text emerges from the deep
-                            textScale.snapTo(0.3f)    // start small (deep inside)
-                            textAlpha.snapTo(0.1f)    // barely visible
-                            textDepth.snapTo(0f)      // deep inside
-                            ballState = BallState.ANSWER_VISIBLE
-
-                            // Text floats toward viewer: gets larger, sharper, brighter
-                            launch {
-                                textDepth.animateTo(1f, tween(1000, easing = FastOutSlowInEasing))
-                            }
-                            launch {
-                                textAlpha.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
-                            }
-                            launch {
-                                textScale.animateTo(
-                                    targetValue = 1f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessLow
-                                    )
-                                )
-                            }
-
-                            // Phase 5: Particles slowly drift back, settling around text
-                            delay(400)
-                            launch { particleScatter.animateTo(0f, tween(2000)) }
-                            launch { particleSettle.animateTo(1f, tween(2000)) }
-
-                            // Final answer haptic: single strong thud
-                            delay(200)
-                            hapticEngine.heavyThud()
-
-                            // Return particles to calm
-                            particleSpeedMultiplier = 0.6f
-                            launch { darkenOverlay.animateTo(0f, tween(1500)) }
-
-                            // Hold answer for 5 seconds, then fade to idle
-                            delay(5000)
-                            launch { textAlpha.animateTo(0f, tween(800)) }
-                            launch { particleSettle.animateTo(0f, tween(1000)) }
-                            delay(800)
-                            ballState = BallState.IDLE
-                            answerText = ""
-                            particleSpeedMultiplier = 1f
-                            particleChaos = 0f
-                            particleScatter.snapTo(0f)
-                        }
-                    }
+                if (ballState == BallState.IDLE || ballState == BallState.LISTENING) {
+                    displayedQuestion = spokenQuestion
+                    startRevealSequence(
+                        scope, hapticEngine, neuralResponse, sensorHub,
+                        displayedQuestion, voiceProfile, shakeProfile,
+                        { ans -> answerText = ans },
+                        { q, r -> onResponseGenerated(q, r) },
+                        { s -> ballState = s },
+                        darkenOverlay, consultingAlpha, particleScatter, particleSettle,
+                        textScale, textAlpha, textDepth,
+                        { v -> particleChaos = v },
+                        { v -> particleSpeedMultiplier = v },
+                        { v -> particleFrozen = v }
+                    )
                 }
             }
             lastShakeState = shaking
@@ -373,10 +302,21 @@ fun MagicBallScreen(
                 interactionSource = interactionSource,
                 indication = null
             ) {
-                if (ballState == BallState.IDLE) {
-                    ballState = BallState.WAITING_FOR_VOICE
-                    particleFrozen = true
-                    onStartVoiceInput()
+                when (ballState) {
+                    BallState.IDLE -> {
+                        ballState = BallState.LISTENING
+                        particleFrozen = true
+                        onStartVoiceInput()
+                    }
+                    BallState.ANSWER_VISIBLE -> {
+                        // Tap to dismiss answer and reset
+                        ballState = BallState.IDLE
+                        answerText = ""
+                        particleFrozen = false
+                        particleChaos = 0f
+                        particleSpeedMultiplier = 1f
+                    }
+                    else -> { /* ignore taps during thinking/listening */ }
                 }
             },
         contentAlignment = Alignment.Center
@@ -750,7 +690,7 @@ fun MagicBallScreen(
                 }
 
                 // ── Listening indicator (WAITING_FOR_VOICE) ──────────────
-                if (ballState == BallState.WAITING_FOR_VOICE) {
+                if (ballState == BallState.LISTENING) {
                     // Outer pulsing ring
                     drawCircle(
                         color = OracleAccent.copy(alpha = 0.25f * listeningPulse),
@@ -953,4 +893,103 @@ private fun DrawScope.drawMicIcon(
         end = Offset(centerX, y + micHeight + arcRadius * 0.4f + 3.5f),
         strokeWidth = 1.5f
     )
+}
+
+// ── Reveal sequence helper ──────────────────────────────────────────────────
+
+private fun startRevealSequence(
+    scope: kotlinx.coroutines.CoroutineScope,
+    hapticEngine: HapticEngine,
+    neuralResponse: NeuralResponse,
+    sensorHub: SensorHub,
+    question: String?,
+    voiceProfile: VoiceProfile?,
+    shakeProfile: ShakeProfile?,
+    setAnswer: (String) -> Unit,
+    onResponse: (String?, String) -> Unit,
+    setState: (BallState) -> Unit,
+    darkenOverlay: Animatable<Float, *>,
+    consultingAlpha: Animatable<Float, *>,
+    particleScatter: Animatable<Float, *>,
+    particleSettle: Animatable<Float, *>,
+    textScale: Animatable<Float, *>,
+    textAlpha: Animatable<Float, *>,
+    textDepth: Animatable<Float, *>,
+    setChaos: (Float) -> Unit,
+    setSpeed: (Float) -> Unit,
+    setFrozen: (Boolean) -> Unit
+) {
+    scope.launch {
+        setState(BallState.THINKING)
+        setFrozen(false)
+        val intensity = sensorHub.shakeIntensity.value
+
+        // Phase 1: Particles go chaotic
+        setChaos((intensity / 20f).coerceIn(0.3f, 1f))
+        setSpeed(2f + intensity / 10f)
+        launch { darkenOverlay.animateTo(0.35f, tween(400)) }
+        launch { consultingAlpha.animateTo(1f, tween(500)) }
+
+        // Haptic crescendo
+        hapticEngine.lightTap()
+        delay(200)
+        hapticEngine.tickTick()
+        delay(300)
+        hapticEngine.heavyThud()
+
+        // Generate response
+        val answer = neuralResponse.respond(
+            question = question,
+            shakeIntensity = intensity,
+            voiceProfile = voiceProfile,
+            shakeProfile = shakeProfile
+        )
+        setAnswer(answer)
+        onResponse(question, answer)
+
+        // Fade out consulting text
+        launch { consultingAlpha.animateTo(0f, tween(300)) }
+
+        // Phase 2: Particles scatter
+        setChaos(0f)
+        setSpeed(0.5f)
+        launch { particleScatter.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
+        delay(400)
+
+        // Phase 3: Text emerges
+        textScale.snapTo(0.3f)
+        textAlpha.snapTo(0.1f)
+        textDepth.snapTo(0f)
+        setState(BallState.ANSWER_VISIBLE)
+
+        launch { textDepth.animateTo(1f, tween(800, easing = FastOutSlowInEasing)) }
+        launch { textAlpha.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
+        launch {
+            textScale.animateTo(1f, spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            ))
+        }
+
+        // Phase 4: Particles settle
+        delay(400)
+        launch { particleScatter.animateTo(0f, tween(2000)) }
+        launch { particleSettle.animateTo(1f, tween(2000)) }
+        hapticEngine.heavyThud()
+
+        setSpeed(0.6f)
+        launch { darkenOverlay.animateTo(0f, tween(1500)) }
+
+        // Hold answer 6 seconds, then fade to idle
+        delay(6000)
+        launch { textAlpha.animateTo(0f, tween(800)) }
+        launch { particleSettle.animateTo(0f, tween(1000)) }
+        delay(800)
+        setState(BallState.IDLE)
+        setAnswer("")
+        setSpeed(1f)
+        setChaos(0f)
+        setFrozen(false)
+        particleScatter.snapTo(0f)
+    }
 }
