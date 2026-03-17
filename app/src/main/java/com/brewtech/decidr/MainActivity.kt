@@ -1,19 +1,17 @@
 package com.brewtech.decidr
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -31,6 +29,7 @@ import com.brewtech.decidr.ui.WheelSpinScreen
 import com.brewtech.decidr.ui.theme.DecidrTheme
 import com.brewtech.decidr.voice.VoiceAnalyzer
 import com.brewtech.decidr.voice.VoiceProfile
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -42,14 +41,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var shakeAnalyzer: ShakeAnalyzer
     private lateinit var voiceAnalyzer: VoiceAnalyzer
 
-    // Voice recognition
-    private lateinit var voiceLauncher: ActivityResultLauncher<Intent>
-    private var spokenQuestion by mutableStateOf<String?>(null)
-    private var voiceResultCallback: ((String) -> Unit)? = null
+    // Native speech recognizer (no UI overlay)
+    private var speechRecognizer: SpeechRecognizer? = null
 
-    // Intelligence state passed to composables
+    // State passed to composables
+    private var spokenQuestion by mutableStateOf<String?>(null)
     private var currentVoiceProfile by mutableStateOf<VoiceProfile?>(null)
     private var currentShakeProfile by mutableStateOf<ShakeProfile?>(null)
+    private var isListening by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,28 +60,13 @@ class MainActivity : ComponentActivity() {
         shakeAnalyzer = ShakeAnalyzer(this)
         voiceAnalyzer = VoiceAnalyzer(this)
 
-        // Register voice recognition launcher (must be done before STARTED)
-        voiceLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            // Stop voice frequency analysis and capture final profile
-            val finalVoiceProfile = voiceAnalyzer.stopCapture()
-            if (finalVoiceProfile != null) {
-                currentVoiceProfile = finalVoiceProfile
-            }
-
-            if (result.resultCode == Activity.RESULT_OK) {
-                val matches = result.data
-                    ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                val question = matches?.firstOrNull()
-                if (!question.isNullOrBlank()) {
-                    spokenQuestion = question
-                    voiceResultCallback?.invoke(question)
-                }
-            }
+        // Create native speech recognizer (no UI)
+        if (SpeechRecognizer.isRecognitionAvailable(this)) {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            speechRecognizer?.setRecognitionListener(createRecognitionListener())
         }
 
-        // Collect shake events from ShakeAnalyzer into compose state
+        // Collect shake events
         lifecycleScope.launch {
             shakeAnalyzer.shakeEvents().collect { profile ->
                 currentShakeProfile = profile
@@ -99,10 +83,10 @@ class MainActivity : ComponentActivity() {
                     spokenQuestion = spokenQuestion,
                     voiceProfile = currentVoiceProfile,
                     shakeProfile = currentShakeProfile,
-                    onStartVoiceInput = { startVoiceRecognition() },
+                    isListening = isListening,
+                    onStartVoiceInput = { startNativeListening() },
                     onClearQuestion = { spokenQuestion = null },
                     onResponseGenerated = { question, response ->
-                        // Update user profile after each 8-ball response
                         userProfile.updateHeartRate(sensorHub.heartRate.value)
                         userProfile.updateSteps(sensorHub.steps.value.toInt())
                         currentVoiceProfile?.let { vp ->
@@ -113,34 +97,88 @@ class MainActivity : ComponentActivity() {
                             userProfile.addQuestion(question, response)
                         }
                         userProfile.save()
-                    },
-                    onVoiceProfileUpdated = { profile -> currentVoiceProfile = profile },
-                    onShakeProfileUpdated = { profile -> currentShakeProfile = profile }
+                    }
                 )
             }
         }
     }
 
-    private fun startVoiceRecognition() {
-        // Start voice frequency analysis in parallel with speech recognition
+    private fun startNativeListening() {
+        if (isListening) return
+
+        // Start voice frequency analysis regardless
         voiceAnalyzer.startCapture { profile ->
             currentVoiceProfile = profile
         }
 
-        try {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Ask your question...")
+        isListening = true
+        spokenQuestion = null
+        hapticEngine.lightTap()
+
+        val recognizer = speechRecognizer
+        if (recognizer == null) {
+            // No speech recognizer available — still capture audio for voice analysis
+            // Auto-stop after 3 seconds
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(3000)
+                isListening = false
+                val finalProfile = voiceAnalyzer.stopCapture()
+                if (finalProfile != null) currentVoiceProfile = finalProfile
             }
-            voiceLauncher.launch(intent)
+            return
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+        }
+
+        try {
+            recognizer.startListening(intent)
         } catch (e: Exception) {
-            // Voice recognition not available — stop capture and silently fail
+            isListening = false
             voiceAnalyzer.stopCapture()
         }
+    }
+
+    private fun createRecognitionListener() = object : RecognitionListener {
+        override fun onResults(results: Bundle?) {
+            isListening = false
+            val finalProfile = voiceAnalyzer.stopCapture()
+            if (finalProfile != null) currentVoiceProfile = finalProfile
+
+            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            val question = matches?.firstOrNull()
+            if (!question.isNullOrBlank()) {
+                spokenQuestion = question
+            }
+            hapticEngine.lightTap()
+        }
+
+        override fun onPartialResults(partialResults: Bundle?) {
+            val partial = partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+            if (!partial.isNullOrBlank()) {
+                spokenQuestion = partial
+            }
+        }
+
+        override fun onError(error: Int) {
+            isListening = false
+            voiceAnalyzer.stopCapture()
+        }
+
+        override fun onReadyForSpeech(params: Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
     override fun onResume() {
@@ -155,6 +193,16 @@ class MainActivity : ComponentActivity() {
         shakeDetector.stop()
         sensorHub.stop()
         shakeAnalyzer.stop()
+        if (isListening) {
+            speechRecognizer?.stopListening()
+            voiceAnalyzer.stopCapture()
+            isListening = false
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        speechRecognizer?.destroy()
     }
 }
 
@@ -167,11 +215,10 @@ fun DecidrNavHost(
     spokenQuestion: String?,
     voiceProfile: VoiceProfile?,
     shakeProfile: ShakeProfile?,
+    isListening: Boolean,
     onStartVoiceInput: () -> Unit,
     onClearQuestion: () -> Unit,
-    onResponseGenerated: (question: String?, response: String) -> Unit,
-    onVoiceProfileUpdated: (VoiceProfile?) -> Unit,
-    onShakeProfileUpdated: (ShakeProfile?) -> Unit
+    onResponseGenerated: (question: String?, response: String) -> Unit
 ) {
     val navController = rememberSwipeDismissableNavController()
 

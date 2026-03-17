@@ -26,8 +26,8 @@ class NeuralResponse(
     companion object {
         private const val HISTORY_SIZE = 10
         private const val MAX_RETRIES = 5
-        private const val MIN_WORDS = 5
-        private const val MAX_WORDS = 30
+        private const val MIN_WORDS = 2
+        private const val MAX_WORDS = 12
         private const val OVERLAP_THRESHOLD = 0.80f
     }
 

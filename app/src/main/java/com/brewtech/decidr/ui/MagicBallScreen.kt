@@ -90,11 +90,12 @@ private val answerPaint = android.graphics.Paint().apply {
 }
 
 private val hintPaint = android.graphics.Paint().apply {
-    color = 0xFF444460.toInt()
-    textSize = 11f
+    color = 0xFFAABBCC.toInt()
+    textSize = 13f
     textAlign = android.graphics.Paint.Align.CENTER
     isAntiAlias = true
     letterSpacing = 0.15f
+    setShadowLayer(6f, 0f, 0f, 0xFF7C4DFF.toInt())
 }
 
 private val questionPaint = android.graphics.Paint().apply {
@@ -223,9 +224,9 @@ fun MagicBallScreen(
         }
     }
 
-    // When spokenQuestion changes to non-null, show question and unfreeze particles
+    // When spokenQuestion changes to non-null, show question briefly
     LaunchedEffect(spokenQuestion) {
-        if (spokenQuestion != null && ballState == BallState.WAITING_FOR_VOICE) {
+        if (spokenQuestion != null && (ballState == BallState.WAITING_FOR_VOICE || ballState == BallState.QUESTION_RECEIVED)) {
             ballState = BallState.QUESTION_RECEIVED
             displayedQuestion = spokenQuestion
             particleFrozen = false
@@ -241,12 +242,25 @@ fun MagicBallScreen(
         }
     }
 
-    // Listen for shake via SensorHub
+    // Auto-timeout: if stuck in WAITING_FOR_VOICE for 5 seconds, auto-advance
+    LaunchedEffect(ballState) {
+        if (ballState == BallState.WAITING_FOR_VOICE) {
+            delay(5000)
+            // If still waiting after 5 sec, move on — voice didn't work
+            if (ballState == BallState.WAITING_FOR_VOICE) {
+                ballState = BallState.QUESTION_RECEIVED
+                particleFrozen = false
+            }
+        }
+    }
+
+    // Listen for shake via SensorHub — works in ANY active state
     LaunchedEffect(Unit) {
         var lastShakeState = false
         sensorHub.shakeDetected.collect { shaking ->
             if (shaking && !lastShakeState) {
-                if (ballState == BallState.QUESTION_RECEIVED || ballState == BallState.IDLE) {
+                // Accept shake in IDLE, WAITING_FOR_VOICE, or QUESTION_RECEIVED
+                if (ballState == BallState.IDLE || ballState == BallState.WAITING_FOR_VOICE || ballState == BallState.QUESTION_RECEIVED) {
                     if (ballState != BallState.REVEALING && ballState != BallState.ANSWER_VISIBLE) {
                         val intensity = sensorHub.shakeIntensity.value
 
@@ -564,16 +578,55 @@ fun MagicBallScreen(
 
                 // Thin specular arc stroke (crescent highlight)
                 drawArc(
-                    color = Color(0x15FFFFFF),
-                    startAngle = 200f,
-                    sweepAngle = 80f,
+                    color = Color(0x20FFFFFF),
+                    startAngle = 195f,
+                    sweepAngle = 90f,
                     useCenter = false,
                     topLeft = Offset(
                         centerX - sphereRadius * 0.85f,
                         centerY - sphereRadius * 0.85f
                     ),
                     size = Size(sphereRadius * 1.7f, sphereRadius * 1.7f),
-                    style = Stroke(width = 2.5f)
+                    style = Stroke(width = 3f)
+                )
+
+                // Rim edge highlight — makes the orb pop off the background
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Transparent,
+                            Color(0x08FFFFFF),
+                            Color(0x18FFFFFF),
+                            Color(0x06FFFFFF)
+                        ),
+                        center = Offset(centerX, centerY),
+                        radius = sphereRadius
+                    ),
+                    radius = sphereRadius,
+                    center = Offset(centerX, centerY)
+                )
+
+                // Subtle rim stroke for definition
+                drawCircle(
+                    color = Color(0x12FFFFFF),
+                    radius = sphereRadius,
+                    center = Offset(centerX, centerY),
+                    style = Stroke(width = 1f)
+                )
+
+                // Bottom shadow reflection — grounds the orb
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0x15FFFFFF),
+                            Color.Transparent
+                        ),
+                        center = Offset(centerX, centerY + sphereRadius * 0.75f),
+                        radius = sphereRadius * 0.25f
+                    ),
+                    radius = sphereRadius * 0.25f,
+                    center = Offset(centerX, centerY + sphereRadius * 0.75f)
                 )
 
                 // ── Darkening Overlay ────────────────────────────────────
@@ -616,7 +669,7 @@ fun MagicBallScreen(
                     val alpha = textAlpha.value
 
                     // Text size grows as it approaches the surface
-                    val emergingSize = 10f + depth * 8f // 10sp deep -> 18sp at surface
+                    val emergingSize = 9f + depth * 6f // 9sp deep -> 15sp at surface
                     answerPaint.textSize = emergingSize * scale
                     answerPaint.alpha = (alpha * 255).toInt()
                     answerPaint.color = android.graphics.Color.WHITE
@@ -645,18 +698,43 @@ fun MagicBallScreen(
                         )
                     }
 
-                    drawContext.canvas.nativeCanvas.drawText(
-                        answerText,
-                        centerX,
-                        centerY + answerPaint.textSize * 0.35f,
-                        answerPaint
-                    )
+                    // Word-wrap text within the sphere
+                    val maxWidth = sphereRadius * 1.1f
+                    val words = answerText.split(" ")
+                    val lines = mutableListOf<String>()
+                    var currentLine = ""
+
+                    for (word in words) {
+                        val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+                        val testWidth = answerPaint.measureText(testLine)
+                        if (testWidth > maxWidth && currentLine.isNotEmpty()) {
+                            lines.add(currentLine)
+                            currentLine = word
+                        } else {
+                            currentLine = testLine
+                        }
+                    }
+                    if (currentLine.isNotEmpty()) lines.add(currentLine)
+
+                    // Draw centered multi-line text
+                    val lineHeight = answerPaint.textSize * 1.3f
+                    val totalHeight = lines.size * lineHeight
+                    val startY = centerY - totalHeight / 2f + answerPaint.textSize * 0.8f
+
+                    for ((idx, line) in lines.withIndex()) {
+                        drawContext.canvas.nativeCanvas.drawText(
+                            line,
+                            centerX,
+                            startY + idx * lineHeight,
+                            answerPaint
+                        )
+                    }
                 }
 
                 // ── Hint Text + Mic Icon (idle state) ────────────────────
                 if (ballState == BallState.IDLE) {
-                    val hintY = centerY + sphereRadius * 0.65f
-                    hintPaint.alpha = (breathe * 180).toInt()
+                    val hintY = centerY + sphereRadius * 0.55f
+                    hintPaint.alpha = (150 + (breathe * 105).toInt()).coerceIn(150, 255)
                     drawContext.canvas.nativeCanvas.drawText(
                         "TAP TO ASK",
                         centerX,
@@ -673,18 +751,58 @@ fun MagicBallScreen(
 
                 // ── Listening indicator (WAITING_FOR_VOICE) ──────────────
                 if (ballState == BallState.WAITING_FOR_VOICE) {
-                    // Pulsing ring to show mic is active
+                    // Outer pulsing ring
+                    drawCircle(
+                        color = OracleAccent.copy(alpha = 0.25f * listeningPulse),
+                        radius = sphereRadius * 0.35f * (0.8f + listeningPulse * 0.2f),
+                        center = Offset(centerX, centerY),
+                        style = Stroke(width = 2f)
+                    )
+                    // Inner pulsing ring
                     drawCircle(
                         color = OracleAccent.copy(alpha = 0.15f * listeningPulse),
-                        radius = sphereRadius * 0.3f * listeningPulse,
+                        radius = sphereRadius * 0.22f * (0.9f + listeningPulse * 0.1f),
                         center = Offset(centerX, centerY),
                         style = Stroke(width = 1.5f)
                     )
 
+                    // Mic icon larger
                     drawMicIcon(
                         centerX = centerX,
-                        y = centerY + 4f,
-                        alpha = listeningPulse * 0.7f
+                        y = centerY - 8f,
+                        alpha = 0.5f + listeningPulse * 0.5f
+                    )
+
+                    // "LISTENING..." text
+                    val listenPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb(
+                            (180 * listeningPulse).toInt().coerceIn(100, 255),
+                            124, 77, 255
+                        )
+                        textSize = 11f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        isAntiAlias = true
+                        letterSpacing = 0.2f
+                    }
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "LISTENING...",
+                        centerX,
+                        centerY + sphereRadius * 0.25f,
+                        listenPaint
+                    )
+
+                    // "Shake when ready" hint below
+                    val shakeHintPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb(120, 170, 170, 190)
+                        textSize = 9f
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        isAntiAlias = true
+                    }
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "shake when ready",
+                        centerX,
+                        centerY + sphereRadius * 0.40f,
+                        shakeHintPaint
                     )
                 }
             }
