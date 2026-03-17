@@ -26,12 +26,9 @@ import com.brewtech.decidr.ui.DiceRollScreen
 import com.brewtech.decidr.ui.HomeScreen
 import com.brewtech.decidr.ui.MagicBallScreen
 import com.brewtech.decidr.ui.WheelSpinScreen
-import com.brewtech.decidr.agent.AgentController
-import com.brewtech.decidr.agent.AgentScreen
 import com.brewtech.decidr.ui.theme.DecidrTheme
 import com.brewtech.decidr.voice.VoiceAnalyzer
 import com.brewtech.decidr.voice.VoiceProfile
-import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -43,7 +40,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var userProfile: UserProfile
     private lateinit var shakeAnalyzer: ShakeAnalyzer
     private lateinit var voiceAnalyzer: VoiceAnalyzer
-    private lateinit var agentController: AgentController
 
     // Native speech recognizer (no UI overlay)
     private var speechRecognizer: SpeechRecognizer? = null
@@ -63,7 +59,6 @@ class MainActivity : ComponentActivity() {
         userProfile = UserProfile(this)
         shakeAnalyzer = ShakeAnalyzer(this)
         voiceAnalyzer = VoiceAnalyzer(this)
-        agentController = AgentController(this, sensorHub)
 
         // Create native speech recognizer (no UI)
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
@@ -85,7 +80,6 @@ class MainActivity : ComponentActivity() {
                     sensorHub = sensorHub,
                     hapticEngine = hapticEngine,
                     userProfile = userProfile,
-                    agentController = agentController,
                     spokenQuestion = spokenQuestion,
                     voiceProfile = currentVoiceProfile,
                     shakeProfile = currentShakeProfile,
@@ -199,7 +193,6 @@ class MainActivity : ComponentActivity() {
         shakeDetector.stop()
         sensorHub.stop()
         shakeAnalyzer.stop()
-        agentController.stop()
         if (isListening) {
             speechRecognizer?.stopListening()
             voiceAnalyzer.stopCapture()
@@ -210,7 +203,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         speechRecognizer?.destroy()
-        agentController.release()
     }
 }
 
@@ -220,7 +212,6 @@ fun DecidrNavHost(
     sensorHub: SensorHub,
     hapticEngine: HapticEngine,
     userProfile: UserProfile,
-    agentController: AgentController,
     spokenQuestion: String?,
     voiceProfile: VoiceProfile?,
     shakeProfile: ShakeProfile?,
@@ -240,8 +231,7 @@ fun DecidrNavHost(
                 onCoinFlip = { navController.navigate("coin_flip") },
                 onWheelSpin = { navController.navigate("wheel_spin") },
                 onDiceRoll = { navController.navigate("dice_roll") },
-                onMagicBall = { navController.navigate("magic_ball") },
-                onLuminaAgent = { navController.navigate("lumina") }
+                onMagicBall = { navController.navigate("magic_ball") }
             )
         }
         composable("coin_flip") {
@@ -263,32 +253,6 @@ fun DecidrNavHost(
                 voiceProfile = voiceProfile,
                 shakeProfile = shakeProfile,
                 onResponseGenerated = onResponseGenerated
-            )
-        }
-        composable("lumina") {
-            val state by agentController.agentState.collectAsState()
-            val micLvl by agentController.micLevel.collectAsState()
-            val speakerLvl by agentController.speakerLevel.collectAsState()
-            val transcriptEntries by agentController.transcript.collectAsState()
-
-            // Start agent when entering screen, stop when leaving
-            androidx.compose.runtime.DisposableEffect(Unit) {
-                agentController.start()
-                onDispose {
-                    agentController.stop()
-                }
-            }
-
-            AgentScreen(
-                state = state,
-                micLevel = micLvl,
-                speakerLevel = speakerLvl,
-                transcript = transcriptEntries,
-                onTapToTalk = { agentController.tapToTalk() },
-                onStop = {
-                    agentController.stop()
-                    navController.popBackStack()
-                }
             )
         }
     }
