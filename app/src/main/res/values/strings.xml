@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Decidr</string>
+
+    <!-- Home Screen -->
+    <string name="home_title">DECIDR</string>
+    <string name="home_subtitle">make a choice</string>
+    <string name="nav_coin">COIN</string>
+    <string name="nav_wheel">WHEEL</string>
+    <string name="nav_dice">DICE</string>
+    <string name="nav_8ball">8-BALL</string>
+
+    <!-- Coin Flip -->
+    <string name="coin_title">COIN FLIP</string>
+    <string name="coin_heads">HEADS</string>
+    <string name="coin_tails">TAILS</string>
+    <string name="coin_hint">Tap or Shake</string>
+    <string name="coin_tally">H: %1$d | T: %2$d</string>
+
+    <!-- Wheel Spin -->
+    <string name="wheel_title">SPIN</string>
+    <string name="wheel_hint">Tap to Spin</string>
+    <string name="wheel_yes">Yes</string>
+    <string name="wheel_no">No</string>
+    <string name="wheel_maybe">Maybe</string>
+    <string name="wheel_ask_again">Ask Again</string>
+    <string name="wheel_definitely">Definitely</string>
+    <string name="wheel_no_way">No Way</string>
+    <string name="wheel_go_for_it">Go For It</string>
+    <string name="wheel_sleep_on_it">Sleep On It</string>
+
+    <!-- Dice Roll -->
+    <string name="dice_title">DICE ROLL</string>
+    <string name="dice_hint">Tap or Shake</string>
+    <string name="dice_total">Total: %1$d</string>
+
+    <!-- Magic 8-Ball -->
+    <string name="ball_title">MAGIC 8-BALL</string>
+    <string name="ball_hint">Shake to Ask</string>
+
+    <!-- 8-Ball Answers -->
+    <string name="ball_certain">It is certain</string>
+    <string name="ball_decidedly_so">It is decidedly so</string>
+    <string name="ball_without_doubt">Without a doubt</string>
+    <string name="ball_yes_definitely">Yes definitely</string>
+    <string name="ball_rely_on_it">You may rely on it</string>
+    <string name="ball_as_i_see_it">As I see it, yes</string>
+    <string name="ball_most_likely">Most likely</string>
+    <string name="ball_outlook_good">Outlook good</string>
+    <string name="ball_yes">Yes</string>
+    <string name="ball_signs_point_yes">Signs point to yes</string>
+    <string name="ball_reply_hazy">Reply hazy, try again</string>
+    <string name="ball_ask_again">Ask again later</string>
+    <string name="ball_better_not">Better not tell you now</string>
+    <string name="ball_cannot_predict">Cannot predict now</string>
+    <string name="ball_concentrate">Concentrate and ask again</string>
+    <string name="ball_dont_count">Don\'t count on it</string>
+    <string name="ball_reply_no">My reply is no</string>
+    <string name="ball_sources_no">My sources say no</string>
+    <string name="ball_outlook_bad">Outlook not so good</string>
+    <string name="ball_very_doubtful">Very doubtful</string>
+</resources>

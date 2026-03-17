@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer glow ring -->
+    <path
+        android:strokeColor="#3300E5FF"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-38,0a38,38 0,1 1,76 0a38,38 0,1 1,-76 0" />
+
+    <!-- Wheel segments (4-segment) -->
+    <path
+        android:fillColor="#0D4F5A"
+        android:pathData="M54,54 L54,22 A32,32 0 0,1 86,54 Z" />
+    <path
+        android:fillColor="#5A1A6E"
+        android:pathData="M54,54 L86,54 A32,32 0 0,1 54,86 Z" />
+    <path
+        android:fillColor="#0D5A2E"
+        android:pathData="M54,54 L54,86 A32,32 0 0,1 22,54 Z" />
+    <path
+        android:fillColor="#5A3A0D"
+        android:pathData="M54,54 L22,54 A32,32 0 0,1 54,22 Z" />
+
+    <!-- Segment dividers -->
+    <path
+        android:strokeColor="#0A0A14"
+        android:strokeWidth="1"
+        android:fillColor="#00000000"
+        android:pathData="M54,22 L54,86 M22,54 L86,54" />
+
+    <!-- Center hub -->
+    <path
+        android:fillColor="#0A0A14"
+        android:pathData="M54,54m-11,0a11,11 0,1 1,22 0a11,11 0,1 1,-22 0" />
+
+    <!-- Center ring -->
+    <path
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="1"
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-11,0a11,11 0,1 1,22 0a11,11 0,1 1,-22 0" />
+
+    <!-- "?" in center -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M52,49 Q52,46 54,46 Q56,46 56,48 Q56,50 54,51 L54,53 M54,55.5 A0.8,0.8 0,1 1,54,55.5" />
+
+    <!-- Pointer triangle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,20 L57,20 L54,26 Z" />
+
+</vector>
