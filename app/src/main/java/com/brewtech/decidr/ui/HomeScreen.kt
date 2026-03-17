@@ -43,7 +43,8 @@ fun HomeScreen(
     onCoinFlip: () -> Unit,
     onWheelSpin: () -> Unit,
     onDiceRoll: () -> Unit,
-    onMagicBall: () -> Unit
+    onMagicBall: () -> Unit,
+    onLuminaAgent: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -92,23 +93,14 @@ fun HomeScreen(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Title
-        Text(
-            text = "DECIDR",
-            color = Accent,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.SansSerif,
-            letterSpacing = 3.sp,
-            modifier = Modifier.offset(y = (-2).dp)
-        )
-        Text(
-            text = "make a choice",
-            color = TextDim,
-            fontSize = 8.sp,
-            fontFamily = FontFamily.SansSerif,
-            letterSpacing = 1.sp,
-            modifier = Modifier.offset(y = 12.dp)
+        // CENTER — Lumina AI Agent
+        OrbButton(
+            label = "LUMINA",
+            onClick = onLuminaAgent,
+            orbColor = Color.Transparent, // custom gradient handled in icon
+            modifier = Modifier,
+            icon = { drawLuminaIcon(it) },
+            customGlow = true
         )
 
         // TOP — Coin
@@ -156,6 +148,7 @@ private fun OrbButton(
     orbColor: Color,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
+    customGlow: Boolean = false,
     icon: DrawScope.(Float) -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -169,31 +162,61 @@ private fun OrbButton(
             modifier = Modifier
                 .size(size)
                 .drawBehind {
-                    // Soft orb glow behind the button — no hard border
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                orbColor.copy(alpha = 0.20f),
-                                orbColor.copy(alpha = 0.08f),
-                                orbColor.copy(alpha = 0.02f),
-                                Color.Transparent
+                    if (customGlow) {
+                        // Lumina: cyan-to-purple gradient glow
+                        val luminaCyan = Color(0xFF00E5FF)
+                        val luminaPurple = Color(0xFFBB86FC)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    luminaCyan.copy(alpha = 0.22f),
+                                    luminaPurple.copy(alpha = 0.10f),
+                                    Color.Transparent
+                                ),
+                                center = Offset(this.size.width / 2f, this.size.height / 2f),
+                                radius = this.size.minDimension * 0.9f
                             ),
-                            center = Offset(this.size.width / 2f, this.size.height / 2f),
                             radius = this.size.minDimension * 0.9f
-                        ),
-                        radius = this.size.minDimension * 0.9f
-                    )
-                    // Very subtle inner circle (not a hard border)
-                    drawCircle(
-                        color = orbColor.copy(alpha = 0.12f),
-                        radius = this.size.minDimension / 2f,
-                        style = Stroke(width = 0.75f)
-                    )
+                        )
+                        drawCircle(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(luminaCyan.copy(alpha = 0.25f), luminaPurple.copy(alpha = 0.25f), luminaCyan.copy(alpha = 0.25f)),
+                                center = Offset(this.size.width / 2f, this.size.height / 2f)
+                            ),
+                            radius = this.size.minDimension / 2f,
+                            style = Stroke(width = 1f)
+                        )
+                    } else {
+                        // Soft orb glow behind the button — no hard border
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    orbColor.copy(alpha = 0.20f),
+                                    orbColor.copy(alpha = 0.08f),
+                                    orbColor.copy(alpha = 0.02f),
+                                    Color.Transparent
+                                ),
+                                center = Offset(this.size.width / 2f, this.size.height / 2f),
+                                radius = this.size.minDimension * 0.9f
+                            ),
+                            radius = this.size.minDimension * 0.9f
+                        )
+                        // Very subtle inner circle (not a hard border)
+                        drawCircle(
+                            color = orbColor.copy(alpha = 0.12f),
+                            radius = this.size.minDimension / 2f,
+                            style = Stroke(width = 0.75f)
+                        )
+                    }
                 }
                 .clip(CircleShape)
                 .background(
                     brush = Brush.radialGradient(
-                        colors = listOf(
+                        colors = if (customGlow) listOf(
+                            Color(0xFF00E5FF).copy(alpha = 0.10f),
+                            Color(0xFFBB86FC).copy(alpha = 0.04f),
+                            Color(0xFF12121E)
+                        ) else listOf(
                             orbColor.copy(alpha = 0.08f),
                             Color(0xFF12121E)
                         ),
@@ -285,4 +308,31 @@ private fun DrawScope.drawEightBallIcon(s: Float) {
     // "8"
     drawCircle(Color.White, r * 0.17f, Offset(cx, cy - r * 0.22f), style = Stroke(width = s * 0.035f))
     drawCircle(Color.White, r * 0.17f, Offset(cx, cy + r * 0.08f), style = Stroke(width = s * 0.035f))
+}
+
+private fun DrawScope.drawLuminaIcon(s: Float) {
+    val cx = s / 2f
+    val cy = s / 2f
+    val cyan = Color(0xFF00E5FF)
+    val purple = Color(0xFFBB86FC)
+
+    // Center dot (broadcast source)
+    drawCircle(cyan, s * 0.06f, Offset(cx, cy + s * 0.12f))
+
+    // Concentric arcs emanating upward (broadcast / signal icon)
+    val arcStroke = s * 0.04f
+    val arcColors = listOf(cyan, Color(0xFF66EEFF), purple)
+    for (i in 0 until 3) {
+        val arcRadius = s * (0.15f + i * 0.11f)
+        val arcAlpha = 1f - i * 0.2f
+        drawArc(
+            color = arcColors[i].copy(alpha = arcAlpha),
+            startAngle = -140f,
+            sweepAngle = 100f,
+            useCenter = false,
+            topLeft = Offset(cx - arcRadius, cy + s * 0.12f - arcRadius),
+            size = Size(arcRadius * 2f, arcRadius * 2f),
+            style = Stroke(width = arcStroke, cap = StrokeCap.Round)
+        )
+    }
 }

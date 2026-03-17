@@ -66,4 +66,7 @@ dependencies {
 
     // Core splashscreen for Wear OS
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    // OkHttp for WebSocket (Gemini Live API)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
