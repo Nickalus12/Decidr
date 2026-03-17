@@ -61,6 +61,9 @@ class SensorContext(
             append("- Previous: IT Specialist roles at Texcel/OmegaOne/SHF (Azure, Intune, Freshdesk)\n")
             append("- Family: Biological daughter Patience (8 years old, birthday March 12th), ")
             append("and two stepdaughters Layla and Avagale\n")
+            append("- Girlfriend: Natalie Barrentine\n")
+            append("- Mom: Melissa Brewer. Dad: Michael Brewer. Brother: Michael Brewer II (no sisters)\n")
+            append("- Nana: May Vela\n")
             append("- Interests: AI automation, building custom solutions, process optimization\n")
             append("- Working style: Values efficiency, technical depth, and innovation\n\n")
 
